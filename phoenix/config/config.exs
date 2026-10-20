@@ -13,6 +13,7 @@ config :my_app, MyAppWeb.Endpoint,
   pubsub_server: MyApp.PubSub,
   check_origin: ["//localhost", "//127.0.0.1"],
   secret_key_base: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  live_view: [signing_salt: "phoenixpracticedashboard"],
   render_errors: [formats: [json: MyAppWeb.ErrorJSON]]
 
 config :phoenix, :json_library, Jason

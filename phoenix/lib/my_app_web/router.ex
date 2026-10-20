@@ -1,8 +1,23 @@
 defmodule MyAppWeb.Router do
   use MyAppWeb, :router
+  import Phoenix.LiveDashboard.Router
+
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+  end
 
   pipeline :api do
     plug :accepts, ["json"]
+  end
+
+  scope "/" do
+    pipe_through :browser
+    live_dashboard "/dashboard",
+      metrics: MyAppWeb.Telemetry,
+      ecto_repos: [MyApp.Repo]
   end
 
   scope "/", MyAppWeb do
