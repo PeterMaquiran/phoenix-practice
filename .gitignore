@@ -1,0 +1,11 @@
+nestjs/node_modules/
+nestjs/dist/
+nestjs/*.sqlite
+nestjs/*.sqlite-journal
+
+phoenix/_build/
+phoenix/deps/
+phoenix/*.db
+phoenix/*.db-wal
+phoenix/*.db-shm
+erl_crash.dump
