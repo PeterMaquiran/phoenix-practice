@@ -11,6 +11,8 @@ defmodule MyAppWeb.PostController do
 
   def create(conn, params) do
     with {:ok, post} <- Posts.create_post(params) do
+      MyAppWeb.Realtime.broadcast_post!("created", post)
+
       conn
       |> put_status(:created)
       |> render(:show, post: post)
@@ -22,13 +24,15 @@ defmodule MyAppWeb.PostController do
 
     with {:ok, post} <- Posts.fetch_post(id),
          {:ok, post} <- Posts.update_post(post, attrs) do
+      MyAppWeb.Realtime.broadcast_post!("updated", post)
       render(conn, :show, post: post)
     end
   end
 
   def delete(conn, %{"id" => id}) do
     with {:ok, post} <- Posts.fetch_post(id),
-         {:ok, _post} <- Posts.delete_post(post) do
+         {:ok, post} <- Posts.delete_post(post) do
+      MyAppWeb.Realtime.broadcast_post!("deleted", post)
       send_resp(conn, :no_content, "")
     end
   end

@@ -7,7 +7,7 @@ defmodule MyAppWeb.PostJSON do
     %{data: data(post)}
   end
 
-  defp data(post) do
+  def data(post) do
     %{
       id: post.id,
       title: post.title,

@@ -5,6 +5,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       MyApp.Repo,
+      {Phoenix.PubSub, name: MyApp.PubSub},
       MyAppWeb.Endpoint
     ]
 

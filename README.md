@@ -76,6 +76,7 @@ Open these pairs side by side.
 | Update rules | `nestjs/src/posts/dto/update-post.dto.ts` | the same `changeset/2` |
 | Tasks feature | `nestjs/src/tasks/` | `phoenix/lib/my_app/tasks.ex`, `phoenix/lib/my_app/tasks/task.ex`, `phoenix/lib/my_app_web/controllers/task_controller.ex` |
 | Turn failures into HTTP | `NotFoundException` and the `ValidationPipe` in `main.ts` | `phoenix/lib/my_app_web/controllers/fallback_controller.ex` |
+| Live updates | no socket in this Nest app | `phoenix/lib/my_app_web/channels/user_socket.ex`, `post_channel.ex`, `task_channel.ex` |
 
 Tasks mirror posts. Read one Nest module folder, then the matching Phoenix context.
 
@@ -107,5 +108,53 @@ The constructor injection in `PostsService` is a direct function call in Phoenix
 - Nest needs a second DTO so update fields are optional. Phoenix uses one changeset: omitted fields stay as they already are on the struct.
 - Nest creates the SQLite tables on boot. Phoenix changes the database only when you run the migrations in `phoenix/priv/repo/migrations`.
 - A missing post is `throw new NotFoundException(...)` in Nest. Phoenix returns `{:error, :not_found}` and `FallbackController` turns that tuple into `404`.
+
+## Phoenix socket
+
+The HTTP API is unchanged. A socket client can join the same data and hear every change.
+
+Connect to `ws://localhost:4000/socket/websocket?vsn=2.0.0`. There is no auth yet: `UserSocket.connect/3` accepts every connection. A browser client on `localhost` or `127.0.0.1` is allowed from any port.
+
+Each message is a JSON array:
+
+```json
+[join_ref, ref, topic, event, payload]
+```
+
+Join the posts feed. The first value is the join ref. Keep it on every later message for that topic. The second value is a new ref for each message:
+
+```json
+["1", "1", "posts", "phx_join", {}]
+["1", "2", "posts", "create", {"title": "Hello", "body": "There"}]
+```
+
+The reply is a `phx_reply` whose response is `{ "data": [ ...posts ] }` for the join. The tasks topic works the same way with `"tasks"`.
+
+Commands you can send after joining:
+
+| Event | Payload | Success reply |
+| --- | --- | --- |
+| `list` | `{}` | `{ "data": [ ... ] }` |
+| `create` | `{ "title": "Hello", "body": "There" }` for posts, `{ "title": "Ship it", "done": false }` for tasks | the saved record |
+| `update` | `{ "id": 1, "title": "Updated" }` | the saved record |
+| `delete` | `{ "id": 1 }` | the deleted record |
+
+A failed command comes back as `phx_reply` with `"status": "error"`. Nothing is broadcast.
+
+Every other joined client receives a push when data changes:
+
+```json
+[null, null, "posts", "created", { "id": 1, "title": "Hello", "body": "There" }]
+```
+
+The event is `created`, `updated`, or `deleted`. The client that sent the command gets the `phx_reply` and does not also get that push. `POST`, `PATCH`, and `DELETE` on the HTTP API broadcast the same events to every joined client.
+
+Files to read in this order:
+
+1. `phoenix/lib/my_app_web/endpoint.ex` mounts the socket at `/socket`.
+2. `phoenix/lib/my_app_web/channels/user_socket.ex` accepts the connection and names the two topics.
+3. `phoenix/lib/my_app_web/channels/post_channel.ex` joins, handles commands, and calls the same `MyApp.Posts` context as the controller.
+4. `phoenix/lib/my_app_web/realtime.ex` is what the HTTP controllers use to publish those changes.
+5. `phoenix/lib/my_app/application.ex` starts `Phoenix.PubSub`, which carries the broadcasts.
 
 The longer concept map is in `nestjs-to-phoenix.md`.

@@ -1,6 +1,10 @@
 defmodule MyAppWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :my_app
 
+  socket "/socket", MyAppWeb.UserSocket,
+    websocket: true,
+    longpoll: false
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :json],
     pass: ["*/*"],

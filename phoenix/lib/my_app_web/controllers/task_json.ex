@@ -7,7 +7,7 @@ defmodule MyAppWeb.TaskJSON do
     %{data: data(task)}
   end
 
-  defp data(task) do
+  def data(task) do
     %{
       id: task.id,
       title: task.title,

@@ -11,6 +11,8 @@ defmodule MyAppWeb.TaskController do
 
   def create(conn, params) do
     with {:ok, task} <- Tasks.create_task(params) do
+      MyAppWeb.Realtime.broadcast_task!("created", task)
+
       conn
       |> put_status(:created)
       |> render(:show, task: task)
@@ -22,13 +24,15 @@ defmodule MyAppWeb.TaskController do
 
     with {:ok, task} <- Tasks.fetch_task(id),
          {:ok, task} <- Tasks.update_task(task, attrs) do
+      MyAppWeb.Realtime.broadcast_task!("updated", task)
       render(conn, :show, task: task)
     end
   end
 
   def delete(conn, %{"id" => id}) do
     with {:ok, task} <- Tasks.fetch_task(id),
-         {:ok, _task} <- Tasks.delete_task(task) do
+         {:ok, task} <- Tasks.delete_task(task) do
+      MyAppWeb.Realtime.broadcast_task!("deleted", task)
       send_resp(conn, :no_content, "")
     end
   end
