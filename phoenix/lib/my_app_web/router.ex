@@ -7,6 +7,7 @@ defmodule MyAppWeb.Router do
 
   scope "/", MyAppWeb do
     get "/", PageController, :index
+    get "/connect2", PageController, :connect2
   end
 
   scope "/", MyAppWeb do

@@ -5,6 +5,11 @@ defmodule MyAppWeb.Endpoint do
     websocket: true,
     longpoll: false
 
+  plug Plug.Static,
+    at: "/",
+    from: {:phoenix, "priv/static"},
+    only: ~w(phoenix.min.js)
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :json],
     pass: ["*/*"],
