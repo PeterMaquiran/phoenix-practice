@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Socket tester</title>
+    <style>
+      body {
+        font: 16px/1.4 system-ui, sans-serif;
+        margin: 2rem auto;
+        max-width: 46rem;
+        color: #1a1a1a;
+      }
+      h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+      .status { color: #555; margin-bottom: 1.5rem; }
+      section {
+        border: 1px solid #ccc;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+      form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+      input { padding: 0.4rem 0.5rem; flex: 1; min-width: 8rem; }
+      button { padding: 0.4rem 0.7rem; }
+      .error { color: #a00; min-height: 1.2em; margin: 0.4rem 0; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      li {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.4rem 0;
+        border-top: 1px solid #eee;
+      }
+      li span { flex: 1; }
+      pre {
+        background: #f6f6f6;
+        padding: 0.75rem;
+        min-height: 6rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Socket tester</h1>
+    <p class="status" id="status">Connecting…</p>
+
+    <section>
+      <h2>Posts</h2>
+      <form id="post-form">
+        <input id="post-title" name="title" placeholder="Title" />
+        <input id="post-body" name="body" placeholder="Body" />
+        <button type="submit">Create post</button>
+      </form>
+      <p class="error" id="post-error"></p>
+      <ul id="posts"></ul>
+    </section>
+
+    <section>
+      <h2>Tasks</h2>
+      <form id="task-form">
+        <input id="task-title" name="title" placeholder="Title" />
+        <button type="submit">Create task</button>
+      </form>
+      <p class="error" id="task-error"></p>
+      <ul id="tasks"></ul>
+    </section>
+
+    <h2>Events</h2>
+    <pre id="log"></pre>
+
+    <script>
+      const posts = new Map()
+      const tasks = new Map()
+      const joins = { posts: "1", tasks: "2" }
+      const pending = new Map()
+      let ref = 0
+      let socket
+      let heartbeat
+
+      const statusEl = document.querySelector("#status")
+      const logEl = document.querySelector("#log")
+
+      function nextRef() {
+        ref += 1
+        return String(ref)
+      }
+
+      function log(line) {
+        logEl.textContent = `${line}\n${logEl.textContent}`.slice(0, 2000)
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text
+      }
+
+      function showError(topic, text) {
+        document.querySelector(`#${topic === "posts" ? "post" : "task"}-error`).textContent = text
+      }
+
+      function formatError(response) {
+        if (!response) return "Request failed"
+        if (response.fields) {
+          return Object.entries(response.fields)
+            .map(([key, messages]) => `${key} ${[].concat(messages).join(", ")}`)
+            .join("; ")
+        }
+        return response.error || "Request failed"
+      }
+
+      function render(topic) {
+        const items = topic === "posts" ? posts : tasks
+        const list = document.querySelector(topic === "posts" ? "#posts" : "#tasks")
+        list.replaceChildren()
+
+        for (const item of items.values()) {
+          const li = document.createElement("li")
+          const label = document.createElement("span")
+          label.textContent = topic === "posts" ? `${item.title} — ${item.body}` : item.title
+          li.append(label)
+
+          if (topic === "tasks") {
+            const toggle = document.createElement("button")
+            toggle.type = "button"
+            toggle.textContent = item.done ? "Mark not done" : "Mark done"
+            toggle.addEventListener("click", () => {
+              push("tasks", "update", { id: item.id, done: !item.done })
+            })
+            li.append(toggle)
+          }
+
+          const remove = document.createElement("button")
+          remove.type = "button"
+          remove.textContent = "Delete"
+          remove.addEventListener("click", () => push(topic, "delete", { id: item.id }))
+          li.append(remove)
+          list.append(li)
+        }
+      }
+
+      function replaceAll(topic, rows) {
+        const items = topic === "posts" ? posts : tasks
+        items.clear()
+        for (const row of rows) items.set(row.id, row)
+        render(topic)
+      }
+
+      function upsert(topic, row) {
+        const items = topic === "posts" ? posts : tasks
+        items.set(row.id, row)
+        render(topic)
+      }
+
+      function removeItem(topic, id) {
+        const items = topic === "posts" ? posts : tasks
+        items.delete(id)
+        render(topic)
+      }
+
+      function send(topic, event, payload) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return
+        const messageRef = nextRef()
+        pending.set(messageRef, event)
+        const joinRef = topic === "phoenix" ? null : joins[topic]
+        socket.send(JSON.stringify([joinRef, messageRef, topic, event, payload]))
+        if (topic !== "phoenix") log(`→ ${topic} ${event} ${JSON.stringify(payload)}`)
+      }
+
+      function push(topic, event, payload) {
+        send(topic, event, payload)
+      }
+
+      function connect() {
+        socket = new WebSocket(`ws://${location.host}/socket/websocket?vsn=2.0.0`)
+
+        socket.onopen = () => {
+          setStatus("Connected")
+          for (const topic of ["posts", "tasks"]) send(topic, "phx_join", {})
+          heartbeat = setInterval(() => send("phoenix", "heartbeat", {}), 30000)
+        }
+
+        socket.onmessage = (event) => {
+          const [joinRef, messageRef, topic, name, payload] = JSON.parse(event.data)
+          if (topic === "phoenix" || name === "phx_reply" && topic === "phoenix") return
+
+          if (name === "phx_reply") {
+            const sent = pending.get(messageRef)
+            pending.delete(messageRef)
+            log(`← ${topic} ${payload.status} ${JSON.stringify(payload.response)}`)
+            if (payload.status !== "ok") {
+              showError(topic, formatError(payload.response))
+              return
+            }
+            showError(topic, "")
+            const body = payload.response
+            if (sent === "delete" && body && body.id != null) removeItem(topic, body.id)
+            else if (body && Array.isArray(body.data)) replaceAll(topic, body.data)
+            else if (body && body.id != null) upsert(topic, body)
+            return
+          }
+
+          log(`← ${topic} ${name} ${JSON.stringify(payload)}`)
+          if (name === "created" || name === "updated") upsert(topic, payload)
+          if (name === "deleted") removeItem(topic, payload.id)
+        }
+
+        socket.onclose = () => {
+          clearInterval(heartbeat)
+          setStatus("Disconnected")
+        }
+      }
+
+      document.querySelector("#post-form").addEventListener("submit", (event) => {
+        event.preventDefault()
+        push("posts", "create", {
+          title: document.querySelector("#post-title").value,
+          body: document.querySelector("#post-body").value
+        })
+        event.target.reset()
+      })
+
+      document.querySelector("#task-form").addEventListener("submit", (event) => {
+        event.preventDefault()
+        push("tasks", "create", {
+          title: document.querySelector("#task-title").value,
+          done: false
+        })
+        event.target.reset()
+      })
+
+      connect()
+    </script>
+  </body>
+</html>

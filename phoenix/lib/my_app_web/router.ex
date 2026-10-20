@@ -6,6 +6,10 @@ defmodule MyAppWeb.Router do
   end
 
   scope "/", MyAppWeb do
+    get "/", PageController, :index
+  end
+
+  scope "/", MyAppWeb do
     pipe_through :api
 
     get "/posts", PostController, :index
